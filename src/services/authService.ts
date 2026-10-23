@@ -3,236 +3,396 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import React, { useState, useEffect } from 'react';
 import {
-  AuthResponse,
-  HospitalRole,
-  LoginFormData,
-  SignupFormData,
-} from '../types/auth';
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  IdCard,
+  ArrowRight,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+} from 'lucide-react';
+import { HospitalRole, LoginFormData, ScreenState, AuthResponse } from '../types/auth';
+import { ROLES_CONFIG } from '../data/roles';
+import { RoleSelector } from './RoleSelector';
+import { authService } from '../services/authService';
+import { patientService } from '../services/patientService';
+import { isValidEmail } from '../utils/validation';
 
-class AuthService {
-  /**
-   * Safe storage helper - stores only remembered user identifier, NEVER plaintext passwords
-   */
-  public saveRememberedIdentity(role: HospitalRole, email: string): void {
-    try {
-      localStorage.setItem('mediai_remembered_identity', JSON.stringify({ role, email }));
-    } catch {
-      // Storage unavailable or disabled
-    }
-  }
-
-  public getRememberedIdentity(): { role: HospitalRole; email: string } | null {
-    try {
-      const data = localStorage.getItem('mediai_remembered_identity');
-      return data ? JSON.parse(data) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  public clearRememberedIdentity(): void {
-    try {
-      localStorage.removeItem('mediai_remembered_identity');
-    } catch {
-      // Storage unavailable
-    }
-  }
-
-  /**
-   * Authenticate user with role-based credentials.
-   * Dispatches to server-side authentication API.
-   * No hardcoded demo credentials or fake success shortcuts.
-   */
-  public async login(data: LoginFormData): Promise<AuthResponse> {
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          role: data.role,
-          email: data.email,
-          password: data.password,
-        }),
-      });
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok || !result.success) {
-        return {
-          success: false,
-          isDemoMode: false,
-          message: result.message || 'Database not configured. Connect Supabase to load this information.',
-          errors: result.errors,
-        };
-      }
-
-      if (data.rememberMe) {
-        this.saveRememberedIdentity(data.role, data.email);
-      } else {
-        this.clearRememberedIdentity();
-      }
-
-      return {
-        success: true,
-        isDemoMode: false,
-        message: result.message || 'Authenticated successfully.',
-        user: result.user,
-        token: result.token,
-      };
-    } catch {
-      return {
-        success: false,
-        isDemoMode: false,
-        message: 'Database not configured. Connect Supabase to load this information.',
-      };
-    }
-  }
-
-  /**
-   * Register a new user with role-specific schema fields.
-   * Connects to backend registration service; never simulates dummy accounts.
-   */
-  public async signup(data: SignupFormData): Promise<AuthResponse> {
-    try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok || !result.success) {
-        return {
-          success: false,
-          isDemoMode: false,
-          message: result.message || 'Database not configured. Connect Supabase to load this information.',
-          errors: result.errors,
-        };
-      }
-
-      return {
-        success: true,
-        isDemoMode: false,
-        message: result.message || 'Registration successful.',
-        user: result.user,
-        patientId: result.patientId || result.user?.patient_id,
-        requiresEmailConfirmation: result.requiresEmailConfirmation,
-      };
-    } catch {
-      return {
-        success: false,
-        isDemoMode: false,
-        message: 'Database not configured. Connect Supabase to load this information.',
-      };
-    }
-  }
-
-  /**
-   * Request password reset link / verification code.
-   */
-  public async requestPasswordReset(role: HospitalRole, email: string): Promise<AuthResponse> {
-    try {
-      const response = await fetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, email }),
-      });
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok || !result.success) {
-        return {
-          success: false,
-          isDemoMode: false,
-          message: result.message || 'Database not configured. Connect Supabase to load this information.',
-        };
-      }
-
-      return {
-        success: true,
-        isDemoMode: false,
-        message: result.message || 'Password reset instructions dispatched.',
-      };
-    } catch {
-      return {
-        success: false,
-        isDemoMode: false,
-        message: 'Database not configured. Connect Supabase to load this information.',
-      };
-    }
-  }
-
-  /**
-   * Verify verification code in password recovery flow.
-   */
-  public async verifyResetCode(email: string, code: string): Promise<AuthResponse> {
-    try {
-      const response = await fetch('/api/auth/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code }),
-      });
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok || !result.success) {
-        return {
-          success: false,
-          isDemoMode: false,
-          message: result.message || 'Database not configured. Connect Supabase to load this information.',
-        };
-      }
-
-      return {
-        success: true,
-        isDemoMode: false,
-        message: result.message || 'Verification code confirmed.',
-      };
-    } catch {
-      return {
-        success: false,
-        isDemoMode: false,
-        message: 'Database not configured. Connect Supabase to load this information.',
-      };
-    }
-  }
-
-  /**
-   * Complete password reset
-   */
-  public async resetPassword(email: string, newPassword: string): Promise<AuthResponse> {
-    try {
-      const response = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, newPassword }),
-      });
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok || !result.success) {
-        return {
-          success: false,
-          isDemoMode: false,
-          message: result.message || 'Database not configured. Connect Supabase to load this information.',
-        };
-      }
-
-      return {
-        success: true,
-        isDemoMode: false,
-        message: result.message || 'Password updated successfully.',
-      };
-    } catch {
-      return {
-        success: false,
-        isDemoMode: false,
-        message: 'Database not configured. Connect Supabase to load this information.',
-      };
-    }
-  }
+interface LoginScreenProps {
+  onNavigate: (
+    screen: ScreenState,
+    role?: HospitalRole,
+    extra?: { patientId?: string; tempToken?: string }
+  ) => void;
+  selectedRole: HospitalRole;
+  onRoleChange: (role: HospitalRole) => void;
 }
 
-export const authService = new AuthService();
+export const LoginScreen: React.FC<LoginScreenProps> = ({
+  onNavigate,
+  selectedRole,
+  onRoleChange,
+}) => {
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
+  const [authResult, setAuthResult] = useState<AuthResponse | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const search = window.location.search;
+
+      if (hash || search) {
+        const hashParams = new URLSearchParams(
+          hash.startsWith('#') ? hash.substring(1) : hash
+        );
+        const searchParams = new URLSearchParams(search);
+
+        const isSignupConfirmation =
+          hashParams.get('type') === 'signup' ||
+          searchParams.get('type') === 'signup' ||
+          hashParams.has('access_token');
+
+        const errorDesc =
+          hashParams.get('error_description') ||
+          searchParams.get('error_description');
+
+        if (isSignupConfirmation) {
+          setVerificationNotice(
+            'Email verified successfully! Your account is active. Please sign in.'
+          );
+          onRoleChange('patient');
+          window.history.replaceState(null, '', window.location.pathname);
+        } else if (errorDesc) {
+          setError(
+            decodeURIComponent(errorDesc).replace(/\+/g, ' ') ||
+              'Email verification link is invalid or has expired.'
+          );
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      }
+    }
+
+    const remembered = authService.getRememberedIdentity();
+    if (remembered) {
+      if (remembered.role === 'patient') {
+        if (remembered.email && !remembered.email.includes('@')) {
+          setIdentifier(remembered.email.toUpperCase());
+          onRoleChange('patient');
+          setRememberMe(true);
+        } else {
+          authService.clearRememberedIdentity();
+          setIdentifier('');
+        }
+      } else {
+        setIdentifier(remembered.email);
+        onRoleChange(remembered.role);
+        setRememberMe(true);
+      }
+    }
+  }, []);
+
+  const handleRoleSelect = (newRole: HospitalRole) => {
+    onRoleChange(newRole);
+    setError(null);
+    setAuthResult(null);
+
+    if (newRole === 'patient') {
+      if (identifier.includes('@')) {
+        setIdentifier('');
+      }
+    } else if (/^P\d+$/i.test(identifier.trim())) {
+      setIdentifier('');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setAuthResult(null);
+
+    const normalizedIdentifier = identifier.trim();
+
+    if (!normalizedIdentifier) {
+      setError(
+        selectedRole === 'patient'
+          ? 'Please enter your Patient ID.'
+          : 'Please enter your official email address.'
+      );
+      return;
+    }
+
+    if (selectedRole === 'patient') {
+      const cleanPatientId = normalizedIdentifier.toUpperCase();
+
+      if (cleanPatientId.includes('@')) {
+        setError('Please enter your Patient ID username, not an email address.');
+        return;
+      }
+
+      if (!password) {
+        setError('Please enter your patient portal password.');
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const response = await patientService.login(cleanPatientId, password);
+
+        if (response.success) {
+          if (rememberMe) {
+            authService.saveRememberedIdentity('patient', cleanPatientId);
+          } else {
+            authService.clearRememberedIdentity();
+          }
+
+          if (response.mustChangePassword) {
+            onNavigate('change-password', 'patient', {
+              patientId: response.patientId || cleanPatientId,
+              tempToken: response.tempToken,
+            });
+            return;
+          }
+
+          onNavigate('patient-dashboard');
+          return;
+        }
+
+        setError(response.message || 'Invalid Patient ID or password.');
+      } catch {
+        setError('An unexpected error occurred during patient authentication.');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    if (!isValidEmail(normalizedIdentifier)) {
+      setError('Please provide a valid email format (e.g. name@hospital.org).');
+      return;
+    }
+
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must contain at least 6 characters.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const payload: LoginFormData = {
+        role: selectedRole,
+        email: normalizedIdentifier,
+        password,
+        rememberMe,
+      };
+
+      const response = await authService.login(payload);
+      setAuthResult(response);
+
+      if (!response.success) {
+        setError(response.message);
+      }
+    } catch {
+      setError('An unexpected error occurred during verification.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const isPatient = selectedRole === 'patient';
+
+  return (
+    <div className="flex flex-col justify-center min-h-full py-8 px-6 sm:px-10 lg:px-14 max-w-xl mx-auto w-full">
+      <div className="mb-6 space-y-1.5">
+        <span className="text-xs font-semibold text-teal-400 tracking-wider uppercase">
+          {isPatient ? 'Patient Care Portal' : 'Hospital Operations Portal'}
+        </span>
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+          {isPatient ? 'Patient Sign In' : 'Welcome back'}
+        </h2>
+        <p className="text-xs sm:text-sm text-slate-400">
+          {isPatient
+            ? 'Access your upcoming appointments, medical encounters, and digital lab reports.'
+            : 'Select your authorized hospital role to sign in to your dashboard.'}
+        </p>
+      </div>
+
+      <div className="mb-6">
+        <RoleSelector
+          selectedRole={selectedRole}
+          onSelectRole={handleRoleSelect}
+          variant="compact"
+          disabled={isLoading}
+        />
+      </div>
+
+      {verificationNotice && (
+        <div
+          role="status"
+          className="mb-5 p-3.5 rounded-xl bg-teal-950/60 border border-teal-500/40 text-xs text-teal-200 animate-in fade-in duration-200 flex items-start gap-2.5"
+        >
+          <CheckCircle2 size={16} className="text-teal-400 shrink-0 mt-0.5" />
+          <div className="leading-relaxed">{verificationNotice}</div>
+        </div>
+      )}
+
+      {error && (
+        <div
+          role="alert"
+          className="mb-5 p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-200 animate-in fade-in duration-200 flex items-start gap-2.5"
+        >
+          <AlertCircle size={16} className="text-rose-400 shrink-0 mt-0.5" />
+          <div className="leading-relaxed">{error}</div>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <div>
+          <label htmlFor="login-identifier" className="block text-xs font-medium text-slate-300 mb-1.5">
+            {isPatient ? (
+              <span className="flex items-center justify-between">
+                <span>Patient ID</span>
+                <span className="text-[10px] text-teal-400 font-mono">Username</span>
+              </span>
+            ) : selectedRole === 'admin' ? (
+              'Institutional Administrator Email'
+            ) : (
+              `${ROLES_CONFIG[selectedRole].title} Email Address`
+            )}
+          </label>
+
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+              {isPatient ? <IdCard size={16} /> : <Mail size={16} />}
+            </div>
+            <input
+              id="login-identifier"
+              type={isPatient ? 'text' : 'email'}
+              autoComplete={isPatient ? 'username' : 'email'}
+              value={identifier}
+              onChange={(e) => {
+                setIdentifier(e.target.value);
+                if (error) setError(null);
+              }}
+              disabled={isLoading}
+              placeholder={isPatient ? 'Enter your Patient ID' : 'name@example.com'}
+              className={`w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/40 ${
+                isPatient ? 'font-mono tracking-wider' : ''
+              }`}
+            />
+          </div>
+
+          {isPatient && identifier.includes('@') && (
+            <p className="mt-1.5 text-[11px] text-amber-400 flex items-center gap-1 font-medium animate-in fade-in duration-150">
+              <AlertCircle size={12} className="shrink-0" />
+              Patient accounts use Patient IDs as usernames, not email addresses.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label htmlFor="login-password" className="block text-xs font-medium text-slate-300">
+              Password
+            </label>
+            <button
+              type="button"
+              onClick={() => onNavigate('forgot-password', selectedRole)}
+              className="text-xs text-teal-400 hover:text-teal-300 transition-colors cursor-pointer"
+            >
+              Forgot password?
+            </button>
+          </div>
+
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+              <Lock size={16} />
+            </div>
+            <input
+              id="login-password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoading}
+              placeholder={isPatient ? 'Enter patient portal password' : 'Enter your password'}
+              className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/40"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              disabled={isLoading}
+              className="rounded border-slate-700 bg-slate-900 text-teal-500 focus:ring-teal-500 h-4 w-4"
+            />
+            <span>Remember this device</span>
+          </label>
+          <span className="text-[11px] text-slate-500">Encrypted Session</span>
+        </div>
+
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full relative group flex items-center justify-center gap-2 py-3 px-6 rounded-xl font-semibold text-sm text-slate-950 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-300 hover:from-teal-300 hover:via-cyan-300 hover:to-teal-200 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 size={17} className="animate-spin text-slate-950" />
+                <span>Authenticating with hospital services...</span>
+              </>
+            ) : (
+              <>
+                <span>{isPatient ? 'Sign In to Patient Dashboard' : 'Sign In to MediAI'}</span>
+                <ArrowRight
+                  size={16}
+                  className="text-slate-950 group-hover:translate-x-0.5 transition-transform"
+                />
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+
+      <div className="mt-8 pt-6 border-t border-slate-800/80 text-center text-xs text-slate-400">
+        <span>Don't have an account? </span>
+        <button
+          type="button"
+          onClick={() => onNavigate('signup', selectedRole)}
+          className="font-semibold text-teal-400 hover:text-teal-300 transition-colors ml-1 cursor-pointer"
+        >
+          Create account as {ROLES_CONFIG[selectedRole].title}
+        </button>
+      </div>
+    </div>
+  );
+};
